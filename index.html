@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <title>Påkaldelsesmagi</title>
+    <style>
+        body, html {
+            margin: 0;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            background-color: black;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Opretter scene, kamera og renderer
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.035); // Tilføjer tåge for mystisk effekt
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 30;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lys
+        const ambientLight = new THREE.AmbientLight(0x404040, 2);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 2);
+        pointLight.position.set(0, 10, 25);
+        scene.add(pointLight);
+
+        // Magisk cirkel (symboliserer påkaldelsen)
+        const circleGeometry = new THREE.CircleGeometry(10, 64);
+        const circleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+        const circle = new THREE.Mesh(circleGeometry, circleMaterial);
+        circle.rotation.x = Math.PI / 2;
+        scene.add(circle);
+
+        // Partikler (symboliserer forfædrenes ånder)
+        const particleCount = 500;
+        const particles = new THREE.BufferGeometry();
+        const positions = [];
+
+        for (let i = 0; i < particleCount; i++) {
+            const x = (Math.random() - 0.5) * 20;
+            const y = Math.random() * 10;
+            const z = (Math.random() - 0.5) * 20;
+            positions.push(x, y, z);
+        }
+
+        particles.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.2,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particleSystem = new THREE.Points(particles, particleMaterial);
+        scene.add(particleSystem);
+
+        // Lydanalyse
+        let analyser, dataArray;
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+            .then(stream => {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+            })
+            .catch(err => console.log('Lydinput fejlede:', err));
+
+        // Animation
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                const avgFreq = dataArray.reduce((a, b) => a + b) / dataArray.length;
+
+                // Opdaterer partiklernes position for at skabe en opadgående bevægelse
+                const positions = particleSystem.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i + 1] += 0.01 + (avgFreq * 0.0001);
+                    if (positions[i + 1] > 10) {
+                        positions[i + 1] = 0;
+                    }
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+
+                // Ændrer cirklens lysstyrke baseret på lyd
+                circle.material.opacity = 0.5 + (avgFreq / 255) * 0.5;
+            }
+
+            // Roterer cirklen langsomt
+            circle.rotation.z += 0.005;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Håndterer vinduesændring
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+
+        // Fuld skærm ved klik
+        document.addEventListener('click', () => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        });
+    </script>
+</body>
+</html>
