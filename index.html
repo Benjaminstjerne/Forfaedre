@@ -1,133 +1,168 @@
 <!DOCTYPE html>
 <html lang="da">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kvantedyr (Shader Version)</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #000; touch-action: manipulation; }
-        #fullscreen-text {
-            position: absolute; bottom: 10px; right: 10px;
-            color: #39FF14; font-family: 'Courier New', monospace;
-            font-size: 14px; letter-spacing: 1px;
-            cursor: pointer; z-index: 1000; padding: 5px;
-            user-select: none;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kvantedyr Shader</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #000;
+      touch-action: manipulation;
+    }
+    #fullscreen-text {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      color: #39ff14;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      letter-spacing: 1px;
+      cursor: pointer;
+      z-index: 1000;
+      padding: 5px;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
-    <div id="fullscreen-text">FULLSCREEN</div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script id="vertexShader" type="x-shader/x-vertex">
-        uniform float u_time;
-        uniform vec2 u_interaction;
-        varying vec3 vNormal;
+  <div id="fullscreen-text">FULLSCREEN</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script id="vertexShader" type="x-shader/x-vertex">
+    uniform float u_time;
+    uniform vec3 u_offset;
+    varying vec3 vNormal;
+    varying float vNoise;
 
-        float noise(vec3 p) {
-            return sin(p.x * 3.0 + u_time * 2.0) * 0.3 + 
-                   cos(p.y * 4.0 + u_time * 1.5) * 0.2 +
-                   sin(p.z * 5.0 + u_time) * 0.1;
+    float snoise(vec3 p) {
+      return sin(p.x + p.y + p.z + u_time);
+    }
+
+    void main() {
+      vNormal = normal;
+      vec3 p = position + u_offset;
+      float n = snoise(p * 2.5);
+      vNoise = n;
+      vec3 displaced = position + normal * n * 0.5;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+    }
+  </script>
+
+  <script id="fragmentShader" type="x-shader/x-fragment">
+    varying vec3 vNormal;
+    varying float vNoise;
+
+    void main() {
+      float intensity = dot(normalize(vNormal), vec3(0.0, 0.0, 1.0));
+      float pulse = sin(vNoise * 10.0) * 0.5 + 0.5;
+      vec3 color = mix(vec3(0.05, 0.2, 0.05), vec3(0.2, 1.0, 0.2), pulse * intensity);
+      gl_FragColor = vec4(color, 0.9);
+    }
+  </script>
+
+  <script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 10;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const organisms = [];
+    const maxCopies = 20;
+    const baseGeometry = new THREE.IcosahedronGeometry(1.0, 6);
+
+    function createOrganism(position, offset) {
+      const uniforms = {
+        u_time: { value: 0 },
+        u_offset: { value: offset.clone() },
+      };
+
+      const material = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: document.getElementById("vertexShader").textContent,
+        fragmentShader: document.getElementById("fragmentShader").textContent,
+        side: THREE.DoubleSide,
+        transparent: true,
+      });
+
+      const mesh = new THREE.Mesh(baseGeometry, material);
+      mesh.position.copy(position);
+      mesh.userData = {
+        uniforms,
+        offset,
+        age: 0,
+        lifespan: 500 + Math.random() * 500,
+        velocity: new THREE.Vector3((Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.02),
+        returning: false,
+        origin: position.clone(),
+      };
+      scene.add(mesh);
+      organisms.push(mesh);
+    }
+
+    for (let i = 0; i < 10; i++) {
+      createOrganism(
+        new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
+        new THREE.Vector3(Math.random() * 10, Math.random() * 10, Math.random() * 10)
+      );
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = performance.now() * 0.001;
+
+      organisms.forEach((org, idx) => {
+        const u = org.userData;
+        u.uniforms.u_time.value = t + idx;
+        u.age++;
+
+        if (!u.returning && u.age > u.lifespan * 0.5 && Math.random() < 0.01) {
+          u.returning = true;
         }
 
-        void main() {
-            vNormal = normal;
-            vec3 newPosition = position;
-            float n = noise(position + vec3(u_time * 0.3));
-
-            float dist = distance(position.xy, u_interaction);
-            float interactionWave = sin(dist * 10.0 - u_time * 5.0) * 0.1;
-
-            newPosition += normal * (n + interactionWave);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
-        }
-    </script>
-
-    <script id="fragmentShader" type="x-shader/x-fragment">
-        varying vec3 vNormal;
-
-        void main() {
-            float intensity = pow(0.5 + dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 2.0);
-            vec3 color = mix(vec3(0.05, 0.1, 0.05), vec3(0.3, 1.0, 0.2), intensity);
-            gl_FragColor = vec4(color, 0.95);
-        }
-    </script>
-
-    <script>
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
-
-        const geometry = new THREE.IcosahedronGeometry(1.5, 6);
-
-        const uniforms = {
-            u_time: { value: 0.0 },
-            u_interaction: { value: new THREE.Vector2(0.0, 0.0) }
-        };
-
-        const material = new THREE.ShaderMaterial({
-            uniforms: uniforms,
-            vertexShader: document.getElementById('vertexShader').textContent,
-            fragmentShader: document.getElementById('fragmentShader').textContent,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-
-        const group = new THREE.Group();
-        for (let i = 0; i < 12; i++) {
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(
-                (Math.random() - 0.5) * 6,
-                (Math.random() - 0.5) * 6,
-                (Math.random() - 0.5) * 6
-            );
-            group.add(mesh);
-        }
-        scene.add(group);
-
-        camera.position.z = 8;
-
-        let mouse = new THREE.Vector2();
-        function onPointerMove(e) {
-            const x = (e.clientX / window.innerWidth) * 2 - 1;
-            const y = -(e.clientY / window.innerHeight) * 2 + 1;
-            uniforms.u_interaction.value.set(x, y);
+        if (u.returning) {
+          const dir = new THREE.Vector3().subVectors(u.origin, org.position).normalize();
+          org.position.add(dir.multiplyScalar(0.01));
+        } else {
+          org.position.add(u.velocity);
         }
 
-        document.addEventListener('mousemove', onPointerMove);
-        document.addEventListener('touchmove', e => {
-            if (e.touches.length > 0) {
-                const t = e.touches[0];
-                onPointerMove({ clientX: t.clientX, clientY: t.clientY });
-            }
-        }, { passive: true });
-
-        function animate() {
-            requestAnimationFrame(animate);
-            uniforms.u_time.value += 0.01;
-            group.rotation.y += 0.002;
-            group.rotation.x += 0.001;
-            renderer.render(scene, camera);
+        if (u.age > u.lifespan) {
+          scene.remove(org);
+          org.geometry.dispose();
+          org.material.dispose();
+          organisms.splice(idx, 1);
         }
-        animate();
+      });
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+      if (organisms.length < maxCopies && Math.random() < 0.02) {
+        const idx = Math.floor(Math.random() * organisms.length);
+        const source = organisms[idx];
+        const newPos = source.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2));
+        createOrganism(newPos, new THREE.Vector3(Math.random() * 10, Math.random() * 10, Math.random() * 10));
+      }
 
-        // Fullscreen logic
-        const fsButton = document.getElementById('fullscreen-text');
-        fsButton.addEventListener('click', () => {
-            const el = document.body;
-            if (el.requestFullscreen) el.requestFullscreen();
-            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-            else if (el.msRequestFullscreen) el.msRequestFullscreen();
-            fsButton.style.display = 'none';
-        });
-    </script>
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const fsButton = document.getElementById("fullscreen-text");
+    fsButton.addEventListener("click", () => {
+      const el = document.body;
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else if (el.msRequestFullscreen) el.msRequestFullscreen();
+      fsButton.style.display = "none";
+    });
+  </script>
 </body>
 </html>
-
